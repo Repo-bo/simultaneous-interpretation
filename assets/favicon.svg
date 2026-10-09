@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="river" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1AA6C2"/>
+      <stop offset="0.55" stop-color="#0E7C9C"/>
+      <stop offset="1" stop-color="#0A5C7D"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#river)"/>
+  <!-- 三笔：川字水形 × 声波（左） -->
+  <path d="M80 66 C64 94 96 110 80 138 C64 166 96 178 80 202"
+        fill="none" stroke="#EAF8FB" stroke-width="15" stroke-linecap="round" opacity="0.92"/>
+  <!-- 中笔振幅最大，象征声源 -->
+  <path d="M128 56 C128 88 164 98 128 128 C92 158 128 170 128 210"
+        fill="none" stroke="#FFFFFF" stroke-width="17" stroke-linecap="round"/>
+  <!-- 右笔，与左笔呼应 -->
+  <path d="M176 66 C192 94 160 110 176 138 C192 166 160 178 176 202"
+        fill="none" stroke="#C7EEF5" stroke-width="15" stroke-linecap="round" opacity="0.92"/>
+</svg>

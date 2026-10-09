@@ -1,5 +1,5 @@
 /* =========================================================
- * 字幕台 · THE CAPTION DESK —— 实时同声传译（纯前端）
+ * 聆川 · LINGCHUAN —— 实时同声传译（纯前端）
  * 语音识别：Web Speech API (SpeechRecognition)
  * 翻  译：Gemini 大模型（可选 Key，首选） + MyMemory / Google gtx（免费降级），本地缓存
  * 语  音：SpeechSynthesis 译文播报
@@ -189,7 +189,7 @@ function scheduleKeepAlive() {
 }
 function warmTranslation() {
   const st = $('#sim-status');
-  st && $('.oa-txt', st) && ($('.oa-txt', st).textContent = 'WARMING · 引擎预热中');
+  st && $('.oa-txt', st) && ($('.oa-txt', st).textContent = '引擎预热中');
   viaMyMemory('hi', 'en', 'zh-CN')
     .catch(() => {})
     .finally(() => {
@@ -198,7 +198,7 @@ function warmTranslation() {
           .catch(() => {})
           .finally(() => {
             scheduleKeepAlive();
-            if (!sim.running) $('.oa-txt', $('#sim-status')).textContent = 'READY · 就绪';
+            if (!sim.running) $('.oa-txt', $('#sim-status')).textContent = '就绪';
           });
       }, 150);
     });
@@ -413,7 +413,7 @@ const state = {
 };
 
 /* =========================================================
- * 台词本：镜号卡片
+ * 同传记录：逐句卡片
  * ========================================================= */
 const sim = {
   rec: null,
@@ -466,7 +466,7 @@ function createCue(text, from, to) {
     </div>
     <div class="cue-body">
       <p class="cue-orig"></p>
-      <p class="cue-trans translating">TRANSLATING 翻译中 …</p>
+      <p class="cue-trans translating">翻译中 …</p>
     </div>`;
   sheet.appendChild(el);
   sheet.scrollTop = sheet.scrollHeight;
@@ -510,7 +510,7 @@ async function commitCue(cue) {
       transEl.onclick = async () => {
         transEl.classList.remove('failed');
         transEl.classList.add('translating');
-        transEl.textContent = 'TRANSLATING 翻译中 …';
+        transEl.textContent = '翻译中 …';
         transEl.onclick = null;
         await commitCue(cue);
       };
@@ -619,13 +619,13 @@ function startOnlineEngine(from, stream) {
   return new Promise((resolve, reject) => {
     let settled = false;
     const done = (fn, arg) => { if (!settled) { settled = true; fn(arg); } };
-    setEngineStatus('CONNECTING · 连接识别服务');
+    setEngineStatus('正在连接识别服务');
 
     const rec = new Recognizer(from, {
       onInterim: scheduleInterim,
       onFinal,
       onState: s => {
-        if (s === 'listening') { setEngineStatus('ON AIR · 在线引擎'); done(resolve); }
+        if (s === 'listening') { setEngineStatus('在线引擎运行中'); done(resolve); }
         else if (s === 'denied') done(reject, new Error('麦克风权限被拒绝，请在地址栏允许'));
       },
       onNetwork: () => handleNetworkFallback(from, stream),
@@ -644,12 +644,12 @@ function startOnlineEngine(from, stream) {
 
 /* ---------------- 离线引擎（Vosk WASM，本地推理） ---------------- */
 async function startOfflineEngine(from, stream) {
-  setEngineStatus('LOADING · 加载离线模型 0%');
+  setEngineStatus('正在加载离线模型 0%');
   const eng = new OfflineStt({
     onInterim: scheduleInterim,
     onFinal,
-    onProgress: p => setEngineStatus(`LOADING · 加载离线模型 ${p}%`),
-    onReady: () => setEngineStatus('ON AIR · 本地离线引擎'),
+    onProgress: p => setEngineStatus(`正在加载离线模型 ${p}%`),
+    onReady: () => setEngineStatus('本地离线引擎运行中'),
   });
   sim.offline = eng;
   sim.rec = null;
@@ -678,9 +678,9 @@ async function handleNetworkFallback(from, stream) {
 async function engineApplyLang(lang) {
   if (sim.offline && sim.running) {
     if (!window.OFFLINE_MODELS || !OFFLINE_MODELS[lang]) { toast('本地离线引擎仅支持中文、英语', 'err'); return false; }
-    setEngineStatus('LOADING · 切换离线模型 …');
+    setEngineStatus('正在切换离线模型 …');
     await sim.offline.applyLang(lang, sim.stream, true);
-    setEngineStatus('ON AIR · 本地离线引擎');
+    setEngineStatus('本地离线引擎运行中');
     return true;
   }
   if (sim.rec) sim.rec.applyLang(lang);
@@ -700,7 +700,7 @@ async function simStop() {
   cap.classList.add('idle'); cap.textContent = '';
   const st = $('#sim-status');
   st.classList.remove('live');
-  $('.oa-txt', st).textContent = 'STANDBY · 待机';
+  $('.oa-txt', st).textContent = '待机中';
 }
 
 /* =========================================================
@@ -710,20 +710,28 @@ function clearAll() {
   if (sim.running) { toast('请先停止同传再清空', 'err'); return; }
   $('#sim-transcript').innerHTML = `
     <div class="empty-tip" id="sim-empty">
-      <p class="et-mark">CUE&nbsp;SHEET</p>
-      <p class="et-line">选择 CH-A 声源与 CH-B 目标语言，按下红色 <b>REC</b> 键开始同传。</p>
-      <p class="et-sub">语音实时转写为下横条字幕，句间停顿即自动翻译，并按镜号编号归档。</p>
+      <span class="et-logo" aria-hidden="true">
+        <svg viewBox="0 0 256 256" width="64" height="64">
+          <rect x="8" y="8" width="240" height="240" rx="56" fill="#0E86A3"/>
+          <path d="M80 66 C64 94 96 110 80 138 C64 166 96 178 80 202" fill="none" stroke="#EAF8FB" stroke-width="15" stroke-linecap="round" opacity="0.92"/>
+          <path d="M128 56 C128 88 164 98 128 128 C92 158 128 170 128 210" fill="none" stroke="#FFFFFF" stroke-width="17" stroke-linecap="round"/>
+          <path d="M176 66 C192 94 160 110 176 138 C192 166 160 178 176 202" fill="none" stroke="#C7EEF5" stroke-width="15" stroke-linecap="round" opacity="0.92"/>
+        </svg>
+      </span>
+      <p class="et-slogan">语音如川流，聆听无国界</p>
+      <p class="et-line">选择声源与目标语言，按下 <b>REC</b> 开始同传。</p>
+      <p class="et-sub">语音实时转写为下方字幕，句间停顿即自动翻译，并逐句归档为同传记录。</p>
     </div>`;
   const cap = $('#sim-caption');
   cap.classList.add('idle'); cap.textContent = '';
   state.log = [];
   gemContext.length = 0;
-  toast('台词本已清空');
+  toast('同传记录已清空');
 }
 
 function exportLog() {
   if (!state.log.length) { toast('暂无可导出的翻译记录', 'err'); return; }
-  const lines = ['# 字幕台 · THE CAPTION DESK — 同声传译记录', '# 导出时间：' + new Date().toLocaleString(), ''];
+  const lines = ['# 聆川 · LINGCHUAN — 同声传译记录', '# 导出时间：' + new Date().toLocaleString(), ''];
   state.log.forEach((r, i) => {
     lines.push(`#${String(i + 1).padStart(3, '0')}  [${r.time}]  ${byId(r.from).short} → ${byId(r.to).short}`);
     lines.push(`原文：${r.text}`);
@@ -733,10 +741,10 @@ function exportLog() {
   const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `字幕台-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.txt`;
+  a.download = `聆川-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.txt`;
   a.click();
   URL.revokeObjectURL(a.href);
-  toast('台词本已导出');
+  toast('同传记录已导出');
 }
 
 /* ---------------- 麦克风权限指引 ---------------- */

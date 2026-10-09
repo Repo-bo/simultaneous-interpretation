@@ -3,24 +3,47 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>字幕台 · The Caption Desk — 实时同声传译</title>
+<title>聆川 · Lingchuan — 实时同声传译</title>
+<meta name="description" content="聆川 Lingchuan —— 纯前端实时同声传译，语音如川流，聆听无国界。" />
+<meta name="theme-color" content="#0E86A3" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,400&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="style.css?v=8" />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet" />
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+<link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png" />
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
+<link rel="icon" type="image/png" sizes="128x128" href="assets/favicon-128.png" />
+<link rel="icon" type="image/png" sizes="256x256" href="assets/favicon-256.png" />
+<link rel="apple-touch-icon" sizes="128x128" href="assets/favicon-128.png" />
+<link rel="stylesheet" href="style.css?v=10" />
 </head>
 <body>
 
-<!-- 印刷套准标记 -->
-<div class="regmarks" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+<!-- 水纹背景装饰 -->
+<div class="river-bg" aria-hidden="true"></div>
 
 <!-- 刊头 -->
 <header class="masthead">
   <div class="wordmark">
-    <span class="seal">字</span>
+    <span class="brand-tile" aria-hidden="true">
+      <svg viewBox="0 0 256 256" width="42" height="42">
+        <defs>
+          <linearGradient id="wmRiver" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#1AA6C2"/>
+            <stop offset="0.55" stop-color="#0E7C9C"/>
+            <stop offset="1" stop-color="#0A5C7D"/>
+          </linearGradient>
+        </defs>
+        <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#wmRiver)"/>
+        <path d="M80 66 C64 94 96 110 80 138 C64 166 96 178 80 202" fill="none" stroke="#EAF8FB" stroke-width="15" stroke-linecap="round" opacity="0.92"/>
+        <path d="M128 56 C128 88 164 98 128 128 C92 158 128 170 128 210" fill="none" stroke="#FFFFFF" stroke-width="17" stroke-linecap="round"/>
+        <path d="M176 66 C192 94 160 110 176 138 C192 166 160 178 176 202" fill="none" stroke="#C7EEF5" stroke-width="15" stroke-linecap="round" opacity="0.92"/>
+      </svg>
+    </span>
     <div class="wm-txt">
-      <h1>字幕台</h1>
-      <p>THE&nbsp;CAPTION&nbsp;DESK</p>
+      <h1>聆川</h1>
+      <p><span class="wm-en">LINGCHUAN</span><span class="wm-sep">·</span>实时同声传译</p>
     </div>
   </div>
   <div class="mast-meta">
@@ -28,21 +51,21 @@
     <div class="rec" id="rec-indicator"><span class="rec-dot"></span><span class="rec-txt">REC</span></div>
   </div>
 </header>
-<div class="rule-double" aria-hidden="true"></div>
+<div class="brand-rule" aria-hidden="true"></div>
 
 <!-- 频道/语言行 -->
 <section class="channel-bar">
   <div class="channel">
-    <span class="ch-lab">CH-A · 声源 SOURCE</span>
+    <span class="ch-lab">声源语言 · SOURCE</span>
     <select id="sim-source"></select>
   </div>
   <button id="sim-swap" class="swap" title="交换语言" aria-label="交换语言">⇄</button>
   <div class="channel">
-    <span class="ch-lab">CH-B · 译为 TARGET</span>
+    <span class="ch-lab">目标语言 · TARGET</span>
     <select id="sim-target"></select>
   </div>
   <div class="onair" id="sim-status">
-    <span class="oa-dot"></span><span class="oa-txt">STANDBY · 待机</span>
+    <span class="oa-dot"></span><span class="oa-txt">待机中</span>
   </div>
 </section>
 
@@ -51,18 +74,26 @@
 </div>
 <div id="mic-banner" class="banner hidden"></div>
 
-<!-- 台词本（字幕记录） -->
+<!-- 同传记录 -->
 <main id="sim-transcript" class="cue-sheet">
   <div class="empty-tip" id="sim-empty">
-    <p class="et-mark">CUE&nbsp;SHEET</p>
-    <p class="et-line">选择 CH-A 声源与 CH-B 目标语言，按下红色 <b>REC</b> 键开始同传。</p>
-    <p class="et-sub">语音实时转写为下横条字幕，句间停顿即自动翻译，并按镜号编号归档。</p>
+    <span class="et-logo" aria-hidden="true">
+      <svg viewBox="0 0 256 256" width="64" height="64">
+        <rect x="8" y="8" width="240" height="240" rx="56" fill="#0E86A3"/>
+        <path d="M80 66 C64 94 96 110 80 138 C64 166 96 178 80 202" fill="none" stroke="#EAF8FB" stroke-width="15" stroke-linecap="round" opacity="0.92"/>
+        <path d="M128 56 C128 88 164 98 128 128 C92 158 128 170 128 210" fill="none" stroke="#FFFFFF" stroke-width="17" stroke-linecap="round"/>
+        <path d="M176 66 C192 94 160 110 176 138 C192 166 160 178 176 202" fill="none" stroke="#C7EEF5" stroke-width="15" stroke-linecap="round" opacity="0.92"/>
+      </svg>
+    </span>
+    <p class="et-slogan">语音如川流，聆听无国界</p>
+    <p class="et-line">选择声源与目标语言，按下 <b>REC</b> 开始同传。</p>
+    <p class="et-sub">语音实时转写为下方字幕，句间停顿即自动翻译，并逐句归档为同传记录。</p>
   </div>
 </main>
 
-<!-- 直播下横条 -->
+<!-- 实时字幕条 -->
 <section class="lowerthird" id="lowerthird">
-  <div class="lt-tag"><span class="lt-dot"></span><span class="lt-en">LIVE CAPTION</span><em>实时字幕</em></div>
+  <div class="lt-tag"><span class="lt-dot"></span><span class="lt-en">聆川 · 实时字幕</span></div>
   <p id="sim-caption" class="lt-text"></p>
   <div class="meter" id="sim-meter"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
 </section>
@@ -100,7 +131,7 @@
     </div>
     <div class="modal-body">
       <p class="modal-note">
-        配置 Gemini API Key 后，翻译优先由 Gemini 大模型完成（可结合上下文），失败自动降级免费引擎。
+        配置 Gemini API Key 后，聆川的翻译将优先由 Gemini 大模型完成（可结合上下文），失败自动降级免费引擎。
         Key 仅保存在本浏览器 localStorage，不会写入代码或上传。
       </p>
       <label class="fld">
@@ -134,6 +165,6 @@
 <div id="toast-host"></div>
 
 <script src="offline-engine.js?v=3"></script>
-<script src="app.js?v=9"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>
