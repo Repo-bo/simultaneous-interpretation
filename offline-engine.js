@@ -35,8 +35,9 @@ async function loadVosk() {
 }
 
 const OFFLINE_MODELS = {
-  'en-US': 'models/en.tar.gz',
-  'zh-CN': 'models/cn.tar.gz',
+  'en-US': ['models/en.tar.gz'],
+  // 中文模型原始 44MB，超过 GitHub Blob API 请求体上限，拆为两片，加载时合并
+  'zh-CN': ['models/cn.part1.bin', 'models/cn.part2.bin'],
 };
 const OFFLINE_RATE = 16000;
 
@@ -58,8 +59,8 @@ class OfflineStt {
     this.lang = null;
   }
 
-  /* ---- 模型：先查 Cache，否则带进度下载，再交给 vosk-browser ---- */
-  async _modelBlob(url, onProgress) {
+  /* ---- 模型：先查 Cache，否则带进度下载，多片按序合并，再交给 vosk-browser ---- */
+  async _fetchPart(url, onProgress) {
     try {
       const cached = await caches.match(url);
       if (cached) return await cached.blob();
@@ -76,7 +77,7 @@ class OfflineStt {
       if (done) break;
       chunks.push(value);
       received += value.length;
-      if (total) onProgress && onProgress(Math.min(96, Math.round((received / total) * 100)));
+      if (total) onProgress && onProgress(received, total);
     }
     const blob = new Blob(chunks);
     try {
@@ -87,12 +88,21 @@ class OfflineStt {
   }
 
   async _loadModel(lang) {
-    const urlPath = OFFLINE_MODELS[lang];
-    if (!urlPath) throw new Error('NO_MODEL');
+    const parts = OFFLINE_MODELS[lang];
+    if (!parts || !parts.length) throw new Error('NO_MODEL');
     if (this._modelPromise && this.lang === lang) return this._modelPromise;
     this.lang = lang;
     this._modelPromise = (async () => {
-      const blob = await this._modelBlob(urlPath, p => this.h.onProgress && this.h.onProgress(p));
+      const blobs = [];
+      for (let i = 0; i < parts.length; i++) {
+        const partStart = i / parts.length, partSpan = 1 / parts.length;
+        const blob = await this._fetchPart(parts[i], (rec, tot) => {
+          this.h.onProgress && this.h.onProgress(
+            Math.round((partStart + partSpan * (tot ? Math.min(1, rec / tot) : 0)) * 96));
+        });
+        blobs.push(blob);
+      }
+      const blob = new Blob(blobs);
       const objUrl = URL.createObjectURL(blob);
       try {
         this.model = await Vosk.createModel(objUrl);
