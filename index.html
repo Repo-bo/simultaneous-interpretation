@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>字幕台 · The Caption Desk — 实时同声传译</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,400&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css?v=7" />
+</head>
+<body>
+
+<!-- 印刷套准标记 -->
+<div class="regmarks" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+
+<!-- 刊头 -->
+<header class="masthead">
+  <div class="wordmark">
+    <span class="seal">字</span>
+    <div class="wm-txt">
+      <h1>字幕台</h1>
+      <p>THE&nbsp;CAPTION&nbsp;DESK</p>
+    </div>
+  </div>
+  <div class="mast-meta">
+    <div class="tc"><span class="tc-lab">TC</span><span id="timecode">00:00:00:00</span></div>
+    <div class="rec" id="rec-indicator"><span class="rec-dot"></span><span class="rec-txt">REC</span></div>
+  </div>
+</header>
+<div class="rule-double" aria-hidden="true"></div>
+
+<!-- 频道/语言行 -->
+<section class="channel-bar">
+  <div class="channel">
+    <span class="ch-lab">CH-A · 声源 SOURCE</span>
+    <select id="sim-source"></select>
+  </div>
+  <button id="sim-swap" class="swap" title="交换语言" aria-label="交换语言">⇄</button>
+  <div class="channel">
+    <span class="ch-lab">CH-B · 译为 TARGET</span>
+    <select id="sim-target"></select>
+  </div>
+  <div class="onair" id="sim-status">
+    <span class="oa-dot"></span><span class="oa-txt">STANDBY · 待机</span>
+  </div>
+</section>
+
+<div id="unsupported" class="banner hidden">
+  当前浏览器不支持实时语音识别，请使用桌面版 <b>Chrome / Edge</b> 打开；仍可使用下方文字即时翻译。
+</div>
+<div id="mic-banner" class="banner hidden"></div>
+
+<!-- 台词本（字幕记录） -->
+<main id="sim-transcript" class="cue-sheet">
+  <div class="empty-tip" id="sim-empty">
+    <p class="et-mark">CUE&nbsp;SHEET</p>
+    <p class="et-line">选择 CH-A 声源与 CH-B 目标语言，按下红色 <b>REC</b> 键开始同传。</p>
+    <p class="et-sub">语音实时转写为下横条字幕，句间停顿即自动翻译，并按镜号编号归档。</p>
+  </div>
+</main>
+
+<!-- 直播下横条 -->
+<section class="lowerthird" id="lowerthird">
+  <div class="lt-tag"><span class="lt-dot"></span><span class="lt-en">LIVE CAPTION</span><em>实时字幕</em></div>
+  <p id="sim-caption" class="lt-text"></p>
+  <div class="meter" id="sim-meter"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+</section>
+
+<!-- 控制台 -->
+<section class="control-deck">
+  <form id="sim-textform" class="typebar">
+    <input id="sim-text" type="text" placeholder="或直接输入文字，回车即译 …" autocomplete="off" />
+    <button type="submit">翻译 ↵</button>
+  </form>
+
+  <button id="sim-mic" class="rec-btn" aria-label="开始或停止同传">
+    <span class="ring"></span>
+    <svg class="ic-mic" viewBox="0 0 24 24" width="28" height="28"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>
+    <svg class="ic-stop" viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M6 6h12v12H6z"/></svg>
+  </button>
+
+  <div class="deck-side">
+    <button id="btn-speak" class="side-btn" aria-pressed="true">播报 · ON</button>
+    <button id="btn-export" class="side-btn">导出</button>
+    <button id="btn-clear" class="side-btn">清空</button>
+    <button id="btn-fullscreen" class="side-btn">全屏</button>
+  </div>
+</section>
+
+<div id="toast-host"></div>
+
+<script src="offline-engine.js?v=3"></script>
+<script src="app.js?v=8"></script>
+</body>
+</html>
