@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,400&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="style.css?v=7" />
+<link rel="stylesheet" href="style.css?v=8" />
 </head>
 <body>
 
@@ -85,12 +85,55 @@
     <button id="btn-export" class="side-btn">导出</button>
     <button id="btn-clear" class="side-btn">清空</button>
     <button id="btn-fullscreen" class="side-btn">全屏</button>
+    <button id="btn-settings" class="side-btn settings-btn" title="翻译引擎设置">
+      设置<span class="gem-dot" id="gem-dot" hidden></span>
+    </button>
   </div>
 </section>
+
+<!-- Gemini 翻译设置弹窗 -->
+<div id="settings-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-label="翻译引擎设置">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>翻译引擎设置</h2>
+      <button id="modal-close" class="modal-x" aria-label="关闭">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="modal-note">
+        配置 Gemini API Key 后，翻译优先由 Gemini 大模型完成（可结合上下文），失败自动降级免费引擎。
+        Key 仅保存在本浏览器 localStorage，不会写入代码或上传。
+      </p>
+      <label class="fld">
+        <span>Gemini API Key</span>
+        <input id="gem-key" type="password" placeholder="AIzaSy… 粘贴你的 Key" autocomplete="off" spellcheck="false" />
+      </label>
+      <label class="fld">
+        <span>模型</span>
+        <select id="gem-model">
+          <option value="gemini-3.8-flash">Gemini 3.8 Flash（最新 · 推荐）</option>
+          <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
+          <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite（最快最省）</option>
+        </select>
+      </label>
+      <label class="fld">
+        <span>API 接入地址（默认即可；网络受限时可填反代地址）</span>
+        <input id="gem-base" type="text" value="https://generativelanguage.googleapis.com/v1beta" autocomplete="off" spellcheck="false" />
+      </label>
+      <div class="modal-actions">
+        <button id="gem-test" class="side-btn">测试连接</button>
+        <button id="gem-clear" class="side-btn">清除 Key</button>
+        <button id="gem-save" class="modal-save">保存</button>
+      </div>
+      <p class="modal-hint">
+        没有 Key？前往 <b>https://aistudio.google.com/app/apikey</b> 免费创建。
+      </p>
+    </div>
+  </div>
+</div>
 
 <div id="toast-host"></div>
 
 <script src="offline-engine.js?v=3"></script>
-<script src="app.js?v=8"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>

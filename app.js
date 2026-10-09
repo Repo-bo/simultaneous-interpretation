@@ -1,7 +1,7 @@
 /* =========================================================
  * 字幕台 · THE CAPTION DESK —— 实时同声传译（纯前端）
  * 语音识别：Web Speech API (SpeechRecognition)
- * 翻  译：MyMemory（主） + Google gtx（备），本地缓存
+ * 翻  译：Gemini 大模型（可选 Key，首选） + MyMemory / Google gtx（免费降级），本地缓存
  * 语  音：SpeechSynthesis 译文播报
  * ========================================================= */
 
@@ -81,9 +81,87 @@ async function viaGoogle(text, sl, tl) {
   return d[0].map(seg => seg[0]).join('');
 }
 
-// 双引擎竞速：MyMemory 与 Google 并发请求，取最先成功者；全失败才抛错。
-// 冷启动下两家延迟差异显著，竞速可直接吃掉最慢的那一段等待。
+/* ---------------- Gemini 大模型翻译（可选；Key 仅存 localStorage） ---------------- */
+const GEM_LS_KEY = 'gemini-cfg';
+function loadGemCfg() {
+  try { return JSON.parse(localStorage.getItem(GEM_LS_KEY)) || {}; }
+  catch (e) { return {}; }
+}
+const gem = { cfg: loadGemCfg() };
+function saveGemCfg(cfg) {
+  gem.cfg = cfg || {};
+  try {
+    if (cfg && cfg.key) localStorage.setItem(GEM_LS_KEY, JSON.stringify(cfg));
+    else localStorage.removeItem(GEM_LS_KEY);
+  } catch (e) {}
+  $('#gem-dot').hidden = !(cfg && cfg.key);
+}
+// 近期原文→译文参考对，作为语境提供给模型，保持术语与表达一致
+const gemContext = [];
+function pushGemContext(src, tgt) {
+  gemContext.push({ src, tgt });
+  if (gemContext.length > 6) gemContext.shift();
+}
+
+async function viaGemini(text, fromDef, toDef) {
+  if (!gem.cfg.key) throw new Error('NO_GEMINI_KEY');
+  const baseUrl = (gem.cfg.base || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/$/, '');
+  const model = gem.cfg.model || 'gemini-3.8-flash';
+  const url = `${baseUrl}/models/${model}:generateContent?key=${encodeURIComponent(gem.cfg.key)}`;
+
+  const ref = gemContext.slice(-4)
+    .map(p => `${fromDef.name}: ${p.src}\n${toDef.name}: ${p.tgt}`).join('\n');
+  const instruction =
+    `You are a professional simultaneous interpreter. Translate the user's sentence ` +
+    `from ${fromDef.name} to ${toDef.name}. Output ONLY the natural, fluent translation — ` +
+    `no explanations, no notes, no surrounding quotation marks. Keep proper nouns consistent with the reference pairs.`;
+  const userText =
+    (ref ? `Reference pairs (context only, do NOT translate):\n${ref}\n\n` : '') +
+    `Sentence to translate:\n${text}`;
+
+  const body = {
+    systemInstruction: { parts: [{ text: instruction }] },
+    contents: [{ role: 'user', parts: [{ text: userText }] }],
+    generationConfig: { temperature: 0.2, maxOutputTokens: 2048, thinkingConfig: { thinkingBudget: 0 } },
+    safetySettings: [
+      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+    ],
+  };
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 25000);
+  let d;
+  try {
+    const r = await fetch(url, { method: 'POST', signal: ctrl.signal,
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok) {
+      const msg = await r.text().catch(() => '');
+      throw new Error(`Gemini HTTP ${r.status} ${msg.slice(0, 180)}`);
+    }
+    d = await r.json();
+  } finally { clearTimeout(timer); }
+
+  const cand = d && d.candidates && d.candidates[0];
+  if (!cand) throw new Error('Gemini 无候选结果');
+  if (cand.finishReason && !/STOP|MAX_TOKENS/.test(cand.finishReason))
+    throw new Error('Gemini 结果被拦截: ' + cand.finishReason);
+  const out = (cand.content?.parts || []).map(p => p.text || '').join('').trim();
+  if (!out) throw new Error('Gemini 返回为空');
+  // 去掉模型偶发包裹的引号
+  return out.replace(/^["“”「『]+|["“”「』]+$/g, '');
+}
+
+// 翻译调度：配置 Key → Gemini 首选（失败自动降级）；否则免费双引擎竞速。
 async function translateRaw(text, fromDef, toDef) {
+  if (gem.cfg.key) {
+    try {
+      const t = await viaGemini(text, fromDef, toDef);
+      pushGemContext(text, t);
+      return t;
+    } catch (e) { /* 网络/额度/拦截等，降级免费引擎 */ }
+  }
   const runners = [
     viaMyMemory(text, fromDef.mm, toDef.mm),
     viaGoogle(text, fromDef.id, toDef.id),
@@ -639,6 +717,7 @@ function clearAll() {
   const cap = $('#sim-caption');
   cap.classList.add('idle'); cap.textContent = '';
   state.log = [];
+  gemContext.length = 0;
   toast('台词本已清空');
 }
 
@@ -710,6 +789,19 @@ function bind() {
     else document.exitFullscreen();
   });
 
+  // Gemini 翻译设置
+  $('#btn-settings').addEventListener('click', openSettings);
+  $('#modal-close').addEventListener('click', closeSettings);
+  $('#gem-save').addEventListener('click', saveSettings);
+  $('#gem-test').addEventListener('click', testGemini);
+  $('#gem-clear').addEventListener('click', clearGeminiKey);
+  $('#settings-modal').addEventListener('click', e => {
+    if (e.target.id === 'settings-modal') closeSettings();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeSettings();
+  });
+
   $('#sim-mic').addEventListener('click', () => (sim.running ? simStop() : simStart()));
 
   $('#sim-swap').addEventListener('click', async () => {
@@ -736,6 +828,48 @@ function bind() {
   });
 }
 
+/* ---------------- Gemini 设置弹窗 ---------------- */
+const GEM_DEFAULT_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+function openSettings() {
+  $('#gem-key').value = gem.cfg.key || '';
+  $('#gem-model').value = gem.cfg.model || 'gemini-3.8-flash';
+  $('#gem-base').value = gem.cfg.base || GEM_DEFAULT_BASE;
+  $('#settings-modal').classList.remove('hidden');
+  $('#gem-key').focus();
+}
+function closeSettings() { $('#settings-modal').classList.add('hidden'); }
+
+function saveSettings() {
+  const key = $('#gem-key').value.trim();
+  const model = $('#gem-model').value;
+  const base = $('#gem-base').value.trim() || GEM_DEFAULT_BASE;
+  saveGemCfg(key ? { key, model, base } : null);
+  toast(key ? 'Gemini 已启用，翻译将优先由大模型完成' : '未配置 Key，使用免费翻译引擎');
+  closeSettings();
+}
+
+// 未保存即可测试当前表单里的配置
+async function testGemini() {
+  const key = $('#gem-key').value.trim();
+  if (!key) { toast('请先填入 API Key', 'err'); return; }
+  const saved = gem.cfg;
+  gem.cfg = { key, model: $('#gem-model').value, base: $('#gem-base').value.trim() || GEM_DEFAULT_BASE };
+  try {
+    const t0 = Date.now();
+    const out = await viaGemini('Hello, welcome to the conference today.', byId('en-US'), byId('zh-CN'));
+    toast(`连接成功 ${Date.now() - t0}ms：${out.slice(0, 20)}`);
+  } catch (e) {
+    toast('连接失败：' + String(e.message).slice(0, 80), 'err');
+  } finally { gem.cfg = saved; }
+}
+
+function clearGeminiKey() {
+  $('#gem-key').value = '';
+  saveGemCfg(null);
+  gemContext.length = 0;
+  toast('Key 已清除，改用免费翻译引擎');
+}
+
 /* ---------------- 识别服务网络探测（no-cors，可达即 resolve） ---------------- */
 function probeRecognizerService() {
   if (location.protocol === 'file:') return;
@@ -756,6 +890,7 @@ function init() {
   warmTranslation();
   probeRecognizerService();
   if (typeof loadVosk === 'function') loadVosk(); // 后台加载离线引擎库，不阻塞页面
+  $('#gem-dot').hidden = !gem.cfg.key;
   if (!SR) $('#unsupported').classList.remove('hidden');
 }
 init();

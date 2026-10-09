@@ -310,3 +310,54 @@ body:fullscreen .cue-sheet{flex:1;}
   .control-deck{grid-template-columns:1fr;gap:16px;padding:18px;}
   .deck-side{justify-self:center;}
 }
+
+/* =========================================================
+   Gemini 设置弹窗
+   ========================================================= */
+.modal-backdrop{
+  position:fixed;inset:0;z-index:90;
+  display:flex;align-items:center;justify-content:center;padding:20px;
+  background:rgba(25,23,18,.55);
+  backdrop-filter:blur(2px);
+}
+.modal{
+  width:min(520px,100%);max-height:88vh;overflow-y:auto;
+  background:var(--paper-2);color:var(--ink);
+  border:1.5px solid var(--ink);
+  box-shadow:7px 7px 0 var(--ink);
+}
+.modal-head{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 20px;border-bottom:1.5px solid var(--ink);
+}
+.modal-head h2{font-family:var(--serif);font-weight:700;font-size:20px;letter-spacing:1px;}
+.modal-x{
+  border:none;background:none;font-size:16px;cursor:pointer;color:var(--ink);
+  width:34px;height:34px;line-height:1;
+}
+.modal-x:hover{background:var(--red);color:var(--paper-2);}
+.modal-body{padding:18px 20px 22px;display:flex;flex-direction:column;gap:14px;}
+.modal-note{font-size:12.5px;line-height:1.7;color:var(--mute);}
+.fld{display:flex;flex-direction:column;gap:6px;font-size:12px;letter-spacing:1px;color:var(--line-strong);}
+.fld input,.fld select{
+  font-family:var(--mono);font-size:13.5px;color:var(--ink);
+  padding:10px 12px;background:var(--paper);
+  border:1.5px solid var(--line-strong);outline:none;width:100%;
+}
+.fld input:focus,.fld select:focus{border-color:var(--red);}
+.modal-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:2px;}
+.modal-save{
+  margin-left:auto;font-family:var(--sans);font-weight:700;font-size:14px;letter-spacing:2px;
+  padding:9px 26px;cursor:pointer;color:var(--paper-2);background:var(--red);
+  border:1.5px solid var(--ink);box-shadow:3px 3px 0 var(--ink);
+}
+.modal-save:active{box-shadow:1px 1px 0 var(--ink);transform:translate(2px,2px);}
+.modal-hint{font-size:12px;color:var(--mute);line-height:1.6;word-break:break-all;}
+
+/* 设置按钮上的“已启用”指示点 */
+.settings-btn{position:relative;}
+.gem-dot{
+  display:inline-block;width:7px;height:7px;border-radius:50%;
+  background:var(--red);margin-left:6px;
+}
+
