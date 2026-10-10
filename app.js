@@ -73,8 +73,11 @@ function splitSentences(text) {
   return out;
 }
 
+// 为 MyMemory 生成一个会话级随机邮箱，提升免费配额（无邮箱 5000 字/日/IP → 有邮箱 50000 字/日）
+const MM_EMAIL = `lingchuan-${Math.random().toString(36).slice(2, 10)}@users.noreply.github.io`;
+
 async function viaMyMemory(text, sl, tl, signal) {
-  const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${encodeURIComponent(sl + '|' + tl)}`;
+  const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${encodeURIComponent(sl + '|' + tl)}&de=${encodeURIComponent(MM_EMAIL)}`;
   const r = await fetchTimeout(url, 12000, signal);
   if (!r.ok) throw new Error('MyMemory HTTP ' + r.status);
   const d = await r.json();
@@ -85,9 +88,19 @@ async function viaMyMemory(text, sl, tl, signal) {
 }
 
 async function viaGoogle(text, sl, tl, signal) {
+  // 主端点：translate.googleapis.com (client=gtx)
   const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(sl)}&tl=${encodeURIComponent(tl)}&dt=t&q=${encodeURIComponent(text)}`;
   const r = await fetchTimeout(url, 12000, signal);
   if (!r.ok) throw new Error('Google HTTP ' + r.status);
+  const d = await r.json();
+  return d[0].map(seg => seg[0]).join('');
+}
+
+// Google 备用端点（translate.google.com，不同 client，绕过部分网络限制）
+async function viaGoogleAlt(text, sl, tl, signal) {
+  const url = `https://translate.google.com/translate_a/single?client=dict-chrome-ex&sl=${encodeURIComponent(sl)}&tl=${encodeURIComponent(tl)}&dt=t&q=${encodeURIComponent(text)}`;
+  const r = await fetchTimeout(url, 12000, signal);
+  if (!r.ok) throw new Error('Google Alt HTTP ' + r.status);
   const d = await r.json();
   return d[0].map(seg => seg[0]).join('');
 }
@@ -255,6 +268,7 @@ async function translateRaw(text, fromDef, toDef) {
   const runners = [
     viaMyMemory(text, fromDef.mm, toDef.mm, ctrl.signal),
     viaGoogle(text, fromDef.id, toDef.id, ctrl.signal),
+    viaGoogleAlt(text, fromDef.id, toDef.id, ctrl.signal),
   ];
   try {
     return await new Promise((resolve, reject) => {
