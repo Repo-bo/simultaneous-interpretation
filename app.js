@@ -281,7 +281,25 @@ async function translateRaw(text, fromDef, toDef) {
         })
       );
     });
-  } finally { ctrl.abort(); }
+  } catch (e) { /* 在线引擎均不可用，继续离线兜底 */ }
+  finally { ctrl.abort(); }
+
+  // 兜底：英中互译走本地 opus-mt 离线模型（首次自动下载，之后零网络）
+  return viaOfflineMT(text, fromDef, toDef);
+}
+
+// 离线兜底：所有在线引擎失败且为英中互译时，用本地 opus-mt 模型推理（首次自动下载模型，之后零网络）
+async function viaOfflineMT(text, fromDef, toDef) {
+  if (!window.offlineMT || !offlineMT.supported(fromDef.id, toDef.id)) throw new Error('OFFLINE_MT_PAIR_UNSUPPORTED');
+  const st = $('#sim-status');
+  offlineMT.onProgress = p => {
+    if (st && !sim.running) $('.oa-txt', st).textContent = `正在加载离线翻译模型 ${p}%`;
+  };
+  try {
+    const t = await offlineMT.translate(text, fromDef.id, toDef.id);
+    if (!t) throw new Error('离线翻译返回为空');
+    return t;
+  } finally { offlineMT.onProgress = null; }
 }
 
 // 预热翻译服务：首个请求承担服务端冷启动（~5s），完成后再确认一次进入热状态，
@@ -1069,6 +1087,7 @@ function init() {
   warmTranslation();
   probeRecognizerService();
   if (typeof loadVosk === 'function') loadVosk(); // 后台加载离线引擎库，不阻塞页面
+  if (typeof loadTransformersLib === 'function') loadTransformersLib().catch(() => {}); // 后台预热离线翻译库（含CDN兜底），失败静默
   updateLlmDot();
   if (!SR) $('#unsupported').classList.remove('hidden');
 }
