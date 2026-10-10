@@ -117,12 +117,32 @@ class OfflineStt {
 
   /* ---- 音频接线：16kHz 上下文 + AudioWorklet（降级 ScriptProcessor） ---- */
   async _wire(stream) {
-    this.ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: OFFLINE_RATE });
+    // 指定 16k 采样率（Vosk 模型要求）；Safari/iOS 可能忽略或对 sampleRate 选项抛错，兜底默认上下文并配合下方重采样
+    let ctx;
+    try { ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: OFFLINE_RATE }); }
+    catch (e) { ctx = new (window.AudioContext || window.webkitAudioContext)(); }
+    this.ctx = ctx;
     const source = this.ctx.createMediaStreamSource(stream);
 
-    const feed = f32 => {
-      if (this.recognizer) this.recognizer.acceptWaveformFloat(f32, OFFLINE_RATE);
-    };
+    // Safari/iOS 会忽略 sampleRate 指定（实际 44.1k/48k），需线性重采样到 16k，
+    // 否则 Vosk 收到错误采样率的 PCM 会识别失效或完全无输出。
+    const actualRate = this.ctx.sampleRate || OFFLINE_RATE;
+    const ratio = actualRate / OFFLINE_RATE;
+    const feed = Math.abs(ratio - 1) < 0.001
+      ? f32 => { if (this.recognizer) this.recognizer.acceptWaveformFloat(f32, OFFLINE_RATE); }
+      : f32 => {
+          if (!this.recognizer) return;
+          const outLen = Math.max(1, Math.round(f32.length / ratio));
+          const out = new Float32Array(outLen);
+          for (let i = 0; i < outLen; i++) {
+            const pos = (i * f32.length) / outLen;
+            const i0 = pos | 0;
+            const i1 = Math.min(f32.length - 1, i0 + 1);
+            const frac = pos - i0;
+            out[i] = f32[i0] * (1 - frac) + f32[i1] * frac;
+          }
+          this.recognizer.acceptWaveformFloat(out, OFFLINE_RATE);
+        };
 
     try {
       await this.ctx.audioWorklet.addModule('lib/pcm-worklet.js');

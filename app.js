@@ -665,8 +665,13 @@ function onFinal(text) {
  * 开始 / 停止
  * ========================================================= */
 async function simStart() {
-  if (!SR) { toast('当前浏览器不支持语音识别，请使用 Chrome / Edge', 'err'); return; }
   const from = $('#sim-source').value, to = $('#sim-target').value;
+  const offlineOK = !!(window.OFFLINE_MODELS && OFFLINE_MODELS[from]);
+  // 能力检测：浏览器不支持在线识别，且该声源语言也无离线模型 → 明确告知，而非静默无反应
+  if (!SR && !offlineOK) {
+    toast('当前浏览器不支持在线语音识别，且「' + byId(from).name + '」未安装离线模型。请改用 Chrome / Edge，或将声源切换为中文 / 英语', 'err');
+    return;
+  }
   if (from === to) { toast('声源语言与目标语言不能相同', 'err'); return; }
 
   sim.spec.prefix = '';
@@ -708,7 +713,6 @@ async function simStart() {
   document.body.classList.add('listening');
 
   // 3) 选择识别引擎：在线服务不可达（探测失败 / 已报 network）→ Vosk 本地离线引擎
-  const offlineOK = !!window.OFFLINE_MODELS && OFFLINE_MODELS[from];
   const useOffline = (!SR || netInfo.googleReachable === false) && offlineOK;
   try {
     if (useOffline) await startOfflineEngine(from, stream);
@@ -791,8 +795,10 @@ async function handleNetworkFallback(from, stream) {
 
   // 检查是否有该语言的离线模型
   if (!window.OFFLINE_MODELS || !OFFLINE_MODELS[from]) {
-    // 该语言无离线模型：静默设置状态，不弹 toast、不停止同传
+    // 该语言无离线模型：此时已无任何可用引擎，必须明确告知（区别于“有替代引擎”的静默切换）
     sim.switching = false;
+    setEngineStatus('在线服务不可达，且无离线模型', false);
+    toast(`语言「${byId(from).name}」在线识别不可达且无离线模型，请切换声源为中文/英语，或检查网络后重试`, 'err');
     return;
   }
 
