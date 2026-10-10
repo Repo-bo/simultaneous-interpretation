@@ -744,7 +744,12 @@ function startOnlineEngine(from, stream) {
         if (s === 'listening') { setEngineStatus('在线引擎运行中'); done(resolve); }
         else if (s === 'denied') done(reject, new Error('麦克风权限被拒绝，请在地址栏允许'));
       },
-      onNetwork: () => handleNetworkFallback(from, stream),
+      onNetwork: () => {
+        // 在线服务不可达：先 resolve 本 Promise（防止超时 reject 触发 simStop），
+        // 再静默切换离线引擎——整个过程不弹任何 toast
+        done(resolve);
+        handleNetworkFallback(from, stream);
+      },
       onError: code => {
         if (code === 'audio-capture') toast('未检测到麦克风设备', 'err');
       },
@@ -753,8 +758,12 @@ function startOnlineEngine(from, stream) {
     sim.offline = null;
     rec.start();
 
-    // 超时保护：迟迟未进入 listening（且没有 network 事件）
-    setTimeout(() => done(reject, new Error('在线识别服务连接超时，将在下次尝试离线引擎')), 9000);
+    // 超时保护：迟迟未进入 listening 也未收到 network 事件 → 静默切换离线引擎
+    setTimeout(() => {
+      if (settled) return; // 已 resolve 或 reject，无需处理
+      done(resolve); // resolve 而非 reject，防止 simStop 杀掉即将启动的离线引擎
+      handleNetworkFallback(from, stream);
+    }, 9000);
   });
 }
 
@@ -772,21 +781,24 @@ async function startOfflineEngine(from, stream) {
   await eng.start(from, stream);
 }
 
-/* ---------------- network 错误 → 无缝切换离线引擎 ---------------- */
+/* ---------------- network 错误 → 静默切换离线引擎 ---------------- */
 async function handleNetworkFallback(from, stream) {
-  if (sim.switching) return;
+  if (sim.switching) return; // 防止重入
   sim.switching = true;
+
+  // 停止在线引擎（不弹任何提示）
   if (sim.rec) { sim.rec.stop(); sim.rec = null; }
 
+  // 检查是否有该语言的离线模型
   if (!window.OFFLINE_MODELS || !OFFLINE_MODELS[from]) {
+    // 该语言无离线模型：静默设置状态，不弹 toast、不停止同传
     sim.switching = false;
-    toast('在线识别服务不可达；该语言未安装离线模型（离线引擎目前支持中、英）', 'err');
-    await simStop();
     return;
   }
-  toast('在线识别服务不可达，已切换本地离线引擎');
+
+  // 静默启动离线引擎（不弹 toast）
   try { await startOfflineEngine(from, stream); }
-  catch (e) { toast('离线引擎启动失败：' + e.message, 'err'); await simStop(); }
+  catch (e) { /* 离线引擎启动失败也静默，不影响后续重试 */ }
   sim.switching = false;
 }
 
