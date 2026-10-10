@@ -449,6 +449,19 @@ body:fullscreen .cue-sheet{flex:1;}
 .modal-hint{font-size:12px;color:var(--mute);line-height:1.6;word-break:break-all;}
 .modal-hint b{color:var(--brand);font-weight:600;}
 
+/* 引擎分组（Gemini / 豆包） */
+.engine-grp{
+  border:1.5px solid var(--line);border-radius:var(--radius);
+  padding:14px 16px 16px;margin-bottom:6px;
+}
+.engine-grp legend{
+  padding:0 8px;font-weight:700;font-size:13px;color:var(--brand-deep);
+  letter-spacing:1px;
+}
+.engine-grp .fld{margin-top:12px;}
+.engine-grp .modal-actions{margin-top:12px;}
+.engine-grp .modal-hint{margin-top:10px;}
+
 /* 设置按钮上的“已启用”指示点 */
 .settings-btn{position:relative;}
 .gem-dot{

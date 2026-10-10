@@ -41,15 +41,26 @@ function joinSpoken(a, b) {
   if (!a) return b;
   return (cjk(last) || cjk(first)) ? a + b : a + ' ' + b;
 }
-async function fetchTimeout(url, ms = 12000) {
+async function fetchTimeout(url, ms = 12000, extSignal) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
+  // 外部 signal（如竞速败者取消）触发时，连带中止本请求
+  const onExt = () => ctrl.abort();
+  if (extSignal) extSignal.addEventListener('abort', onExt, { once: true });
   try { return await fetch(url, { signal: ctrl.signal }); }
-  finally { clearTimeout(t); }
+  finally {
+    clearTimeout(t);
+    if (extSignal) extSignal.removeEventListener('abort', onExt);
+  }
 }
 
 /* ---------------- 翻译服务 ---------------- */
 const transCache = new Map();
+// 在途请求去重：同一句（同语种对）正在翻译时，后续请求复用同一 Promise，
+// 杜绝“投机预译 + 最终提交”对同一句发起重复网络请求。
+const inFlight = new Map();
+// 缓存 key 归一化：压缩连续空白并去首尾空格，提升缓存命中率（翻译引擎内部亦会归一化空白）。
+const normKey = s => s.replace(/\s+/g, ' ').trim();
 
 // 按句末标点切句（保留标点），用于细粒度缓存与渐进翻译；超长句硬切保护
 function splitSentences(text) {
@@ -62,9 +73,9 @@ function splitSentences(text) {
   return out;
 }
 
-async function viaMyMemory(text, sl, tl) {
+async function viaMyMemory(text, sl, tl, signal) {
   const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${encodeURIComponent(sl + '|' + tl)}`;
-  const r = await fetchTimeout(url);
+  const r = await fetchTimeout(url, 12000, signal);
   if (!r.ok) throw new Error('MyMemory HTTP ' + r.status);
   const d = await r.json();
   const t = d && d.responseData && d.responseData.translatedText;
@@ -73,9 +84,9 @@ async function viaMyMemory(text, sl, tl) {
   return t;
 }
 
-async function viaGoogle(text, sl, tl) {
+async function viaGoogle(text, sl, tl, signal) {
   const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(sl)}&tl=${encodeURIComponent(tl)}&dt=t&q=${encodeURIComponent(text)}`;
-  const r = await fetchTimeout(url);
+  const r = await fetchTimeout(url, 12000, signal);
   if (!r.ok) throw new Error('Google HTTP ' + r.status);
   const d = await r.json();
   return d[0].map(seg => seg[0]).join('');
@@ -94,7 +105,11 @@ function saveGemCfg(cfg) {
     if (cfg && cfg.key) localStorage.setItem(GEM_LS_KEY, JSON.stringify(cfg));
     else localStorage.removeItem(GEM_LS_KEY);
   } catch (e) {}
-  $('#gem-dot').hidden = !(cfg && cfg.key);
+  updateLlmDot();
+}
+function updateLlmDot() {
+  const dot = $('#gem-dot');
+  if (dot) dot.hidden = !(gem.cfg.key || dou.cfg.key);
 }
 // 近期原文→译文参考对，作为语境提供给模型，保持术语与表达一致
 const gemContext = [];
@@ -131,7 +146,7 @@ async function viaGemini(text, fromDef, toDef) {
     ],
   };
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 25000);
+  const timer = setTimeout(() => ctrl.abort(), 8000); // Gemini Flash 通常 <3s，8s 上限足以；超时即快速降级
   let d;
   try {
     const r = await fetch(url, { method: 'POST', signal: ctrl.signal,
@@ -153,29 +168,106 @@ async function viaGemini(text, fromDef, toDef) {
   return out.replace(/^["“”「『]+|["“”「』]+$/g, '');
 }
 
-// 翻译调度：配置 Key → Gemini 首选（失败自动降级）；否则免费双引擎竞速。
+/* ---------------- 豆包大模型翻译（火山引擎 ARK，OpenAI 兼容） ---------------- */
+const DOU_LS_KEY = 'doubao-cfg';
+const DOU_DEFAULT_BASE = 'https://ark.cn-beijing.volces.com/api/v3';
+function loadDouCfg() {
+  try { return JSON.parse(localStorage.getItem(DOU_LS_KEY)) || {}; }
+  catch (e) { return {}; }
+}
+const dou = { cfg: loadDouCfg() };
+function saveDouCfg(cfg) {
+  dou.cfg = cfg || {};
+  try {
+    if (cfg && cfg.key) localStorage.setItem(DOU_LS_KEY, JSON.stringify(cfg));
+    else localStorage.removeItem(DOU_LS_KEY);
+  } catch (e) {}
+  updateLlmDot();
+}
+
+async function viaDoubao(text, fromDef, toDef) {
+  if (!dou.cfg.key) throw new Error('NO_DOUBAO_KEY');
+  const baseUrl = (dou.cfg.base || DOU_DEFAULT_BASE).replace(/\/$/, '');
+  const model = dou.cfg.endpoint || 'doubao-1-5-lite-32k-250115';
+  const url = `${baseUrl}/chat/completions`;
+
+  // 复用与 Gemini 相同的上下文参考对，保持术语一致
+  const ref = gemContext.slice(-4)
+    .map(p => `${fromDef.name}: ${p.src}\n${toDef.name}: ${p.tgt}`).join('\n');
+  const system =
+    `你是专业同声传译员。把用户句子从${fromDef.name}译为${toDef.name}。` +
+    `只输出自然流畅的译文，不要解释、不要注释、不要引号。专有名词与参考对保持一致。`;
+  const user =
+    (ref ? `参考对（仅作语境，不要翻译）：\n${ref}\n\n` : '') +
+    `待翻译句子：\n${text}`;
+
+  const body = {
+    model,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ],
+    temperature: 0.2,
+    max_tokens: 2048,
+  };
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000);
+  let d;
+  try {
+    const r = await fetch(url, {
+      method: 'POST', signal: ctrl.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${dou.cfg.key}`,
+      },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const msg = await r.text().catch(() => '');
+      throw new Error(`豆包 HTTP ${r.status} ${msg.slice(0, 180)}`);
+    }
+    d = await r.json();
+  } finally { clearTimeout(timer); }
+
+  const out = d?.choices?.[0]?.message?.content?.trim();
+  if (!out) throw new Error('豆包返回为空');
+  return out.replace(/^["“”「『]+|["“”「』]+$/g, '');
+}
+
+// 翻译调度：按顺序尝试已配置的大模型（Gemini → 豆包），任一失败继续；都失败则降级免费双引擎竞速。
+// 免费双引擎竞速使用 AbortController：先成功者立即取消另一路，释放连接、避免限流。
 async function translateRaw(text, fromDef, toDef) {
   if (gem.cfg.key) {
     try {
       const t = await viaGemini(text, fromDef, toDef);
       pushGemContext(text, t);
       return t;
-    } catch (e) { /* 网络/额度/拦截等，降级免费引擎 */ }
+    } catch (e) { /* 降级下一个引擎 */ }
   }
+  if (dou.cfg.key) {
+    try {
+      const t = await viaDoubao(text, fromDef, toDef);
+      pushGemContext(text, t);
+      return t;
+    } catch (e) { /* 降级免费引擎 */ }
+  }
+  const ctrl = new AbortController();
   const runners = [
-    viaMyMemory(text, fromDef.mm, toDef.mm),
-    viaGoogle(text, fromDef.id, toDef.id),
+    viaMyMemory(text, fromDef.mm, toDef.mm, ctrl.signal),
+    viaGoogle(text, fromDef.id, toDef.id, ctrl.signal),
   ];
-  return new Promise((resolve, reject) => {
-    let pending = runners.length;
-    let lastErr;
-    runners.forEach(p =>
-      p.then(resolve, e => {
-        lastErr = e;
-        if (--pending === 0) reject(lastErr || new Error('翻译引擎均不可用'));
-      })
-    );
-  });
+  try {
+    return await new Promise((resolve, reject) => {
+      let pending = runners.length;
+      let lastErr;
+      runners.forEach(p =>
+        p.then(t => { ctrl.abort(); resolve(t); }, e => {
+          lastErr = e;
+          if (--pending === 0) reject(lastErr || new Error('翻译引擎均不可用'));
+        })
+      );
+    });
+  } finally { ctrl.abort(); }
 }
 
 // 预热翻译服务：首个请求承担服务端冷启动（~5s），完成后再确认一次进入热状态，
@@ -206,12 +298,18 @@ function warmTranslation() {
 
 // 单句翻译（缓存粒度 = 句子），识别中途预译与最终提交共享同一缓存
 async function translateSentence(s, fromId, toId) {
-  const key = `${fromId}>${toId}:${s}`;
+  const key = `${fromId}>${toId}:${normKey(s)}`;
   if (transCache.has(key)) return transCache.get(key);
-  const out = (await translateRaw(s, byId(fromId), byId(toId))).trim();
-  transCache.set(key, out);
-  if (transCache.size > 500) transCache.delete(transCache.keys().next().value);
-  return out;
+  if (inFlight.has(key)) return inFlight.get(key); // 复用在途请求，不重复发起
+  const p = (async () => {
+    const out = (await translateRaw(s, byId(fromId), byId(toId))).trim();
+    transCache.set(key, out);
+    if (transCache.size > 500) transCache.delete(transCache.keys().next().value);
+    return out;
+  })();
+  inFlight.set(key, p);
+  p.finally(() => inFlight.delete(key));
+  return p;
 }
 
 /**
@@ -223,16 +321,20 @@ async function translateStream(text, fromId, toId, onPartial) {
   const sents = splitSentences(text);
   const outs = new Array(sents.length);
   let next = 0;
+  let acc = ''; // 累积已就绪译文，避免每次 flush 重复 slice+join（O(n²)→O(n)）
   const flush = () => {
-    while (next < sents.length && outs[next] !== undefined) next++;
-    if (onPartial && next > 0) onPartial(outs.slice(0, next).join(''));
+    while (next < sents.length && outs[next] !== undefined) {
+      acc += outs[next];
+      next++;
+    }
+    if (onPartial && acc) onPartial(acc);
   };
   await Promise.all(sents.map(async (s, i) => {
     outs[i] = await translateSentence(s, fromId, toId);
     flush();
   }));
   flush();
-  return outs.join('');
+  return acc;
 }
 
 async function translate(text, fromId, toId) {
@@ -803,6 +905,8 @@ function bind() {
   $('#gem-save').addEventListener('click', saveSettings);
   $('#gem-test').addEventListener('click', testGemini);
   $('#gem-clear').addEventListener('click', clearGeminiKey);
+  $('#dou-test').addEventListener('click', testDoubao);
+  $('#dou-clear').addEventListener('click', clearDoubaoKey);
   $('#settings-modal').addEventListener('click', e => {
     if (e.target.id === 'settings-modal') closeSettings();
   });
@@ -836,30 +940,43 @@ function bind() {
   });
 }
 
-/* ---------------- Gemini 设置弹窗 ---------------- */
+/* ---------------- 翻译引擎设置弹窗（Gemini + 豆包） ---------------- */
 const GEM_DEFAULT_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 function openSettings() {
   $('#gem-key').value = gem.cfg.key || '';
   $('#gem-model').value = gem.cfg.model || 'gemini-3.8-flash';
   $('#gem-base').value = gem.cfg.base || GEM_DEFAULT_BASE;
+  $('#dou-key').value = dou.cfg.key || '';
+  $('#dou-endpoint').value = dou.cfg.endpoint || '';
+  $('#dou-base').value = dou.cfg.base || DOU_DEFAULT_BASE;
   $('#settings-modal').classList.remove('hidden');
   $('#gem-key').focus();
 }
 function closeSettings() { $('#settings-modal').classList.add('hidden'); }
 
 function saveSettings() {
-  const key = $('#gem-key').value.trim();
-  const model = $('#gem-model').value;
-  const base = $('#gem-base').value.trim() || GEM_DEFAULT_BASE;
-  saveGemCfg(key ? { key, model, base } : null);
-  toast(key ? 'Gemini 已启用，翻译将优先由大模型完成' : '未配置 Key，使用免费翻译引擎');
+  // 保存 Gemini
+  const gKey = $('#gem-key').value.trim();
+  const gModel = $('#gem-model').value;
+  const gBase = $('#gem-base').value.trim() || GEM_DEFAULT_BASE;
+  saveGemCfg(gKey ? { key: gKey, model: gModel, base: gBase } : null);
+  // 保存豆包
+  const dKey = $('#dou-key').value.trim();
+  const dEp = $('#dou-endpoint').value.trim();
+  const dBase = $('#dou-base').value.trim() || DOU_DEFAULT_BASE;
+  saveDouCfg(dKey ? { key: dKey, endpoint: dEp, base: dBase } : null);
+
+  const engines = [];
+  if (gKey) engines.push('Gemini');
+  if (dKey) engines.push('豆包');
+  toast(engines.length ? `${engines.join('、')} 已启用，翻译将优先由大模型完成` : '未配置大模型，使用免费翻译引擎');
   closeSettings();
 }
 
 // 未保存即可测试当前表单里的配置
 async function testGemini() {
   const key = $('#gem-key').value.trim();
-  if (!key) { toast('请先填入 API Key', 'err'); return; }
+  if (!key) { toast('请先填入 Gemini API Key', 'err'); return; }
   const saved = gem.cfg;
   gem.cfg = { key, model: $('#gem-model').value, base: $('#gem-base').value.trim() || GEM_DEFAULT_BASE };
   try {
@@ -871,11 +988,33 @@ async function testGemini() {
   } finally { gem.cfg = saved; }
 }
 
+async function testDoubao() {
+  const key = $('#dou-key').value.trim();
+  if (!key) { toast('请先填入豆包 API Key', 'err'); return; }
+  const saved = dou.cfg;
+  dou.cfg = { key, endpoint: $('#dou-endpoint').value.trim(), base: $('#dou-base').value.trim() || DOU_DEFAULT_BASE };
+  try {
+    const t0 = Date.now();
+    const out = await viaDoubao('Hello, welcome to the conference today.', byId('en-US'), byId('zh-CN'));
+    toast(`连接成功 ${Date.now() - t0}ms：${out.slice(0, 20)}`);
+  } catch (e) {
+    toast('连接失败：' + String(e.message).slice(0, 80), 'err');
+  } finally { dou.cfg = saved; }
+}
+
 function clearGeminiKey() {
   $('#gem-key').value = '';
   saveGemCfg(null);
-  gemContext.length = 0;
-  toast('Key 已清除，改用免费翻译引擎');
+  if (!dou.cfg.key) gemContext.length = 0;
+  toast('Gemini Key 已清除');
+}
+
+function clearDoubaoKey() {
+  $('#dou-key').value = '';
+  $('#dou-endpoint').value = '';
+  saveDouCfg(null);
+  if (!gem.cfg.key) gemContext.length = 0;
+  toast('豆包 Key 已清除');
 }
 
 /* ---------------- 识别服务网络探测（no-cors，可达即 resolve） ---------------- */
@@ -898,7 +1037,7 @@ function init() {
   warmTranslation();
   probeRecognizerService();
   if (typeof loadVosk === 'function') loadVosk(); // 后台加载离线引擎库，不阻塞页面
-  $('#gem-dot').hidden = !gem.cfg.key;
+  updateLlmDot();
   if (!SR) $('#unsupported').classList.remove('hidden');
 }
 init();
